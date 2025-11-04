@@ -12,6 +12,7 @@ import ExtensionExternalConverters from "./extension/externalConverters";
 import ExtensionExternalExtensions from "./extension/externalExtensions";
 import ExtensionGroups from "./extension/groups";
 import ExtensionHealth from "./extension/health";
+import ExtensionHomie from "./extension/homie";
 import ExtensionNetworkMap from "./extension/networkMap";
 import ExtensionOnEvent from "./extension/onEvent";
 import ExtensionOTAUpdate from "./extension/otaUpdate";
@@ -78,6 +79,7 @@ export class Controller {
         this.extensions.add(new ExtensionGroups(...this.extensionArgs));
         this.extensions.add(new ExtensionBind(...this.extensionArgs));
         this.extensions.add(new ExtensionOTAUpdate(...this.extensionArgs));
+        this.extensions.add(new ExtensionHomie(...this.extensionArgs)),
         this.extensions.add(new ExtensionAvailability(...this.extensionArgs));
         this.extensions.add(new ExtensionHealth(...this.extensionArgs));
 
