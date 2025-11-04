@@ -3,6 +3,8 @@ import * as settings from "../util/settings";
 import utils from "lib/util/utils";
 import logger from "../util/logger";
 import bind from "bind-decorator";
+import { MqttPublishOptions } from "lib/mqtt";
+import { forEach } from "jszip";
 
 export class Homie extends Extension{
     private devices: Map<string, HomieDevice> = new Map<string, HomieDevice>();
@@ -18,18 +20,15 @@ export class Homie extends Extension{
         restartCallback: () => Promise<void>,
         addExtension: (extension: Extension) => Promise<void>,
     ) {
-        super(zigbee, mqtt, state, publishEntityState, eventBus, enableDisableExtension, restartCallback, addExtension);
-        if (settings.get().advanced.output === "attribute") {
-            throw new Error("Home Assistant integration is not possible with attribute output!");
+            super(zigbee, mqtt, state, publishEntityState, eventBus, enableDisableExtension, restartCallback, addExtension);
         }
-        logger.info("Homie extension initialized");
-        console.log("Homie extension initialized");
-    }
+
     override async start(): Promise<void> {
+/*
         if (!settings.get().advanced.cache_state) {
             logger.warning("In order for Home Assistant integration to work properly set `cache_state: true");
         }
-
+*/
         /*this.zigbee2MQTTVersion = (await utils.getZigbee2MQTTVersion(false)).version;
         this.discoveryOrigin = {name: "Zigbee2MQTT", sw: this.zigbee2MQTTVersion, url: "https://www.zigbee2mqtt.io"};
         this.bridge = this.getBridgeEntity(await this.zigbee.getCoordinatorVersion());
@@ -111,12 +110,38 @@ export class Homie extends Extension{
 
 };
 
-export class HomieDevice {
-    private nodes: HomieNode[];
-    public id: string;
-    public name: string;
+class HomieHelper {
+    private mqtt: Mqtt;
+    private publishOptions: Partial<MqttPublishOptions> = {};
 
-    constructor( id: string,  name: string) {
+    constructor(mqtt: Mqtt, homieTopic: string | undefined) {
+        this.mqtt = mqtt;
+        if (homieTopic) {
+            this.publishOptions.baseTopic = homieTopic;
+        }
+    }
+
+    async publish(topic: string[], data: string): Promise<string> {
+        var assembled_topic = topic.join("/")
+        await this.mqtt.publish(assembled_topic, data, this.publishOptions);
+        return assembled_topic;
+    }
+
+    async remove_topic(topic: string): Promise<void> {
+        await this.mqtt.publish(topic, "");
+    }
+
+};
+
+export class HomieDevice {
+
+    protected homie: HomieHelper;
+    protected nodes: HomieNode[];
+    protected id: string;
+    protected name: string;
+
+    constructor(homie: HomieHelper, id: string, name: string) {
+        this.homie = homie;
         this.id = id;
         this.name = name;
         this.nodes = []
@@ -125,79 +150,111 @@ export class HomieDevice {
     async addAttribute(attribute: HomieNode): Promise<void> {
         this.nodes.push(attribute);
     }
+
+    async expose(base_list: string[]): Promise<void> {
+        for (const node of this.nodes) {
+            await node.expose(base_list);
+        }
+    };
 };
 
 export class HomieNode {
-    /*properties: HomieProperty[];
 
-    constructor(properties: HomieProperty[]) {
+    protected homie: HomieHelper;
+    protected properties: HomieProperty[];
+    protected id: string;
+    public readonly name: string;
+
+    constructor(homie: HomieHelper, id: string, name: string, properties: HomieProperty[]) {
+        this.homie = homie;
+        this.id = id;
+        this.name = name;
         this.properties = properties;
     }
 
-    async expose(homie: Mqtt, base_list: string[]): Promise<void> {
-        for (const property of this.properties) {
-            await property.expose(homie, base_list);
-        }
-    };*/
-};
-
-/*
-export class HomieProperty {
-    private name: string;
-    private value: any;
-    private unit: string;
-    private datatype: string;
-    private min: number;
-    private max: number;
-    private settable: boolean;
-    private retained: boolean;
-    private property_id: string;
-    private init_value: any;
-    private value_topic: string;
-    private value_set_cb?: (value: any) => void;
-    private homie?: Mqtt;
-
-    private topicsToRemove: string[] = [];
-
-    constructor(name: string, value: any) {
-        this.name = name;
-        this.value = value;
-    }
-
-    async expose(homie:Mqtt, base_list: string[]): Promise<boolean> {
-        this.homie = homie
-
-        base_list[-1] = this.property_id
-        this.value_topic = this.homie.publish(base_list, this.init_value)
+    async expose(base_list: string[]): Promise<void> {
+        base_list[-1] = this.id
 
         base_list.push("$name")
         this.homie.publish(base_list, this.name)
 
-        base_list[-1] = "$datatype"
-        this.homie.publish(base_list, this.datatype)
+        base_list[-1] = "$properties"
+        this.homie.publish(base_list, this.properties.map(({ name }) => ({ name })).join(","));
+
+        for (const property of this.properties) {
+            await property.expose(base_list);
+        }
+    };
+};
+
+
+export class HomieProperty {
+    private homie: HomieHelper;
+    private propertyId: string;
+    public readonly name: string;
+    private type: string;
+    private unit: string;
+    private format: string;
+    private value: any;
+    private settable: boolean;
+    private retained: boolean;
+
+    // Quick access to value topic
+    private value_topic: string = "";
+    // store build topics, avoids to rebuild when deleting device.
+    private topicsToRemove: string[] = [];
+
+    constructor(homie: HomieHelper, propertyId: string, name: string, type: string, unit: string, format: string, init_value: any, retained: boolean, settable: boolean) {
+        this.homie = homie;
+        this.propertyId = propertyId;
+        this.name = name;
+        this.type = type;
+        this.unit = unit;
+        this.format = format;
+        this.retained = retained;
+        this.settable = settable;
+
+        this.value = init_value.toString();
+    }
+
+    async expose(base_list: string[]): Promise<void> {
+
+        base_list[-1] = this.propertyId
+        this.value_topic = await this.homie.publish(base_list, this.value)
+
+        base_list.push("$name");
+        this.topicsToRemove.push(await this.homie.publish(base_list, this.name));
+
+        base_list[-1] = "$datatype";
+        this.homie.publish(base_list, this.type);
 
         if (this.unit != null) {
-            base_list[-1] = "$unit"
-            this.homie.publish(base_list, this.unit)
+            base_list[-1] = "$unit";
+            this.homie.publish(base_list, this.unit);
         }
-        if (this.min != null) {
-            base_list[-1] = "$format"
-            this.homie.publish(base_list, `${this.min}..${this.max}`)
+        if (this.format != null) {
+            base_list[-1] = "$format";
+            this.homie.publish(base_list, this.format);
         }
 
         if (!this.retained) {
-            base_list[-1] = "$retained"
-            this.homie.publish(base_list, "false")
+            base_list[-1] = "$retained";
+            this.homie.publish(base_list, "false");
         }
 
-        if (this.value_set_cb) {
-            base_list[-1] = "$settable"
-            this.homie.publish(base_list, "true")
-            return true
+        if (this.settable) {
+            base_list[-1] = "$settable";
+            this.homie.publish(base_list, "true");
         }
-        return false
+    }
 
+    async remove(): Promise<void> {
+        this.homie.remove_topic(this.value_topic);
+        for (var topic of this.topicsToRemove) {
+            this.homie.remove_topic(topic);
+        }
+
+    }
 };
-*/
 
 export default Homie;
