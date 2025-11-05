@@ -71,7 +71,7 @@ export class Homie extends Extension{
             await this.discover(e, false);
         }
 
-        logger.debug(`Discovering entities to Home Assistant in ${discoverWait}s`);
+        logger.debug(`Homie: Discovering entities to Home Assistant in ${discoverWait}s`);
         await this.mqtt.subscribe(`${this.discoveryTopic}/#`);
         setTimeout(async () => {
             await this.mqtt.unsubscribe(`${this.discoveryTopic}/#`);
@@ -90,23 +90,27 @@ export class Homie extends Extension{
         /*if (!this.getDiscovered(data.device).discovered) {
             await this.discover(data.device);
         }*/
-        logger.debug(`Zigbee event received for '${data.device.name}'`);
+        logger.debug(`Homie: Zigbee event received for '${data.device.name}'`);
         if (!this.flag) {
             this.flag = true;
 
+            logger.debug(`Homie: exposing device '${data.device.name}'`); 
+
             const device_id = data.device.ieeeAddr;
             const device = new HomieDevice(this.homieHelper, device_id, device_id);
-            const property = new HomieProperty(this.homieHelper, "clong", "clang", "float", "mV", undefined, "1000", true, true);
-            const node = new HomieNode(this.homieHelper, "nodeId", "node", [property]);
+            const property = new HomieProperty(this.homieHelper, "clong", "Beautiful clong", "float", "mV", undefined, "1000", true, true);
+            const node = new HomieNode(this.homieHelper, "nodeId", "Beautiful node", [property]);
             device.addNode(node);
             this.devices.set(device_id, device);
 
             await device.expose();
+
+            logger.debug(`Homie: device '${data.device.name}' exposed.`);
         }
     }
 
     @bind async onEntityRemoved(data: eventdata.EntityRemoved): Promise<void> {
-        logger.debug(`Clearing Home Assistant discovery for '${data.name}'`);
+        logger.debug(`Homie: Clearing Home Assistant discovery for '${data.name}'`);
     }
 
     @bind private async onMQTTMessage(data: eventdata.MQTTMessage): Promise<void> {
@@ -116,7 +120,7 @@ export class Homie extends Extension{
             if (device) {
                 await device.trySet(topicParts[1], topicParts[2], topicParts[3], data.message);
             } else {
-                logger.debug(`Got homie message for unregistered device (${topicParts[1]}).`)
+                logger.debug(`Homie: Got homie message for unregistered device (${topicParts[1]}).`)
             }
         }
     }
@@ -200,13 +204,13 @@ export class HomieDevice {
     async expose(): Promise<void> {
         const base_list: string[] = [this.id, "$state"]
 
-        base_list[-1] = "$homie"
+        base_list[base_list.length - 1] = "$homie"
         await this.homie.publish(base_list, VERSION)
 
-        // base_list[-1] = "$name"
+        // base_list[base_list.length - 1] = "$name"
         // self.name_topic = self.publish(base_list, nice_device_name)
 
-        base_list[-1] = "$state"
+        base_list[base_list.length - 1] = "$state"
         this.state_topic = await this.homie.publish(base_list, "init")
 
         for (const node of this.nodes.values()) {
@@ -221,7 +225,7 @@ export class HomieDevice {
         if (node) {
             return await node.trySet(deviceId, nodeId, propertyId, value);
         } else {
-            logger.debug(`Got homie message for unregistered device node (${deviceId}/${nodeId}).`);
+            logger.debug(`Homie: Got homie message for unregistered device node (${deviceId}/${nodeId}).`);
             return false;
         }
     }
@@ -240,17 +244,17 @@ export class HomieNode {
         this.id = id;
         this.name = name;
         this.properties = new Map<string, HomieProperty>;
-        properties.forEach((prop) => this.properties.set(prop.name, prop));
+        properties.forEach((prop) => this.properties.set(prop.ID, prop));
     }
 
     async expose(base_list: string[]): Promise<void> {
-        base_list[-1] = this.id
+        base_list[base_list.length - 1] = this.id
 
         base_list.push("$name")
         this.homie.publish(base_list, this.name)
 
         // list the available properties in a comma separated list
-        base_list[-1] = "$properties"
+        base_list[base_list.length - 1] = "$properties"
         this.homie.publish(base_list, Array.from(this.properties.keys()).join(","));
 
         // expose the properties of the node
@@ -264,7 +268,7 @@ export class HomieNode {
         if (property) {
             return await property.setValue(deviceId, nodeId, propertyId, value);
         } else {
-            logger.debug(`Got homie message for unregistered device node property (${deviceId}/${nodeId}/${propertyId}).`);
+            logger.debug(`Homie: Got homie message for unregistered device node property (${deviceId}/${nodeId}/${propertyId}).`);
             return false;
         }
     }
@@ -273,24 +277,24 @@ export class HomieNode {
 
 
 export class HomieProperty {
-    private homie: HomieHelper;
-    private propertyId: string;
-    public readonly name: string;
-    private type: string;
-    private unit: string | undefined;
-    private format: string | undefined;
-    private value: any;
-    private settable: boolean;
-    private retained: boolean;
+    protected homie: HomieHelper;
+    public ID: string;
+    protected readonly name: string;
+    protected type: string;
+    protected unit: string | undefined;
+    protected format: string | undefined;
+    protected value: any;
+    protected settable: boolean;
+    protected retained: boolean;
 
     // Quick access to value topic
-    private value_topic: string = "";
+    protected value_topic: string = "";
     // store build topics, avoids to rebuild when deleting device.
-    private topicsToRemove: string[] = [];
+    protected topicsToRemove: string[] = [];
 
     constructor(homie: HomieHelper, propertyId: string, name: string, type: string, unit?: string, format?: string, init_value?: any, retained?: boolean, settable?: boolean) {
         this.homie = homie;
-        this.propertyId = propertyId;
+        this.ID = propertyId;
         this.name = name;
         this.type = type;
         this.unit = unit;
@@ -303,33 +307,33 @@ export class HomieProperty {
 
     async expose(base_list: string[]): Promise<void> {
 
-        base_list[-1] = this.propertyId
+        base_list[base_list.length - 1] = this.ID
         this.value_topic = await this.homie.publish(base_list, this.value)
 
         base_list.push("$name");
         this.topicsToRemove.push(await this.homie.publish(base_list, this.name));
 
-        base_list[-1] = "$datatype";
+        base_list[base_list.length - 1] = "$datatype";
         await this.homie.publish(base_list, this.type);
 
         if (this.unit) {
-            base_list[-1] = "$unit";
+            base_list[base_list.length - 1] = "$unit";
             await this.homie.publish(base_list, this.unit);
         }
         if (this.format) {
-            base_list[-1] = "$format";
+            base_list[base_list.length - 1] = "$format";
             await this.homie.publish(base_list, this.format);
         }
 
         if (!this.retained) {
-            base_list[-1] = "$retained";
+            base_list[base_list.length - 1] = "$retained";
             await this.homie.publish(base_list, "false");
         }
 
         if (this.settable) {
-            base_list[-1] = "$settable";
+            base_list[base_list.length - 1] = "$settable";
             await this.homie.publish(base_list, "true");
-            base_list[-1] = "set";
+            base_list[base_list.length - 1] = "set";
             await this.homie.subscribe(base_list);
         }
     }
@@ -343,7 +347,7 @@ export class HomieProperty {
     }
 
     async setValue(deviceId: string, nodeId: string, propertyId: string, value: string): Promise<boolean> {
-        logger.debug(`Value ${value} set for device node property (${deviceId}/${nodeId}/${propertyId}).`);
+        logger.debug(`Homie: Value ${value} set for device node property (${deviceId}/${nodeId}/${propertyId}).`);
         return true;
     }
 };
