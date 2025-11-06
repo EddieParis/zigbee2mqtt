@@ -5,6 +5,7 @@ import logger from "../util/logger";
 import bind from "bind-decorator";
 import { MqttPublishOptions } from "lib/mqtt";
 import { forEach } from "jszip";
+import * as zhc from "zigbee-herdsman-converters";
 
 const VERSION = "3.0"
 
@@ -52,10 +53,10 @@ export class Homie extends Extension{
         this.eventBus.onDeviceInterview(this, this.onZigbeeEvent);
         this.eventBus.onDeviceMessage(this, this.onZigbeeEvent);
         /*this.eventBus.onScenesChanged(this, this.onScenesChanged);
-        this.eventBus.onEntityOptionsChanged(this, async (data) => await this.discover(data.entity));
+        this.eventBus.onEntityOptionsChanged(this, async (data) => await this.discover(data.entity));*/
         this.eventBus.onExposesChanged(this, async (data) => await this.discover(data.device));
 
-        await this.mqtt.subscribe(this.statusTopic);*/
+        /*await this.mqtt.subscribe(this.statusTopic);*/
 
         /**
          * Prevent unnecessary re-discovery of entities by waiting 5 seconds for retained discovery messages to come in.
@@ -91,7 +92,7 @@ export class Homie extends Extension{
             await this.discover(data.device);
         }*/
         logger.debug(`Homie: Zigbee event received for '${data.device.name}'`);
-        if (!this.flag) {
+        /*if (!this.flag) {
             this.flag = true;
 
             logger.debug(`Homie: exposing device '${data.device.name}'`); 
@@ -106,8 +107,47 @@ export class Homie extends Extension{
             await device.expose();
 
             logger.debug(`Homie: device '${data.device.name}' exposed.`);
-        }
+        }*/
+
+        await this.discover(data.device);
     }
+
+    async discover(zDevice: Device): Promise<void> {
+
+        if (this.devices.has(zDevice.ieeeAddr)) {
+            logger.debug(`Homie: Device '${zDevice.name}' already exposed.`);
+            return;
+        }
+        zDevice.exposes().forEach(async (expose) => {logger.debug(`Homie: ${zDevice.name} expose: ${expose.name}, type ${expose.type}, access ${expose.access}, desc ${expose.description}`); if (expose.features) {expose.features.forEach((feature) => {logger.debug(`Homie:    feature: ${feature.name}, type ${feature.type}, access ${feature.access}, desc ${feature.description}`);});}});
+        
+        const properties: HomieProperty[] = [];
+
+        const device_id = zDevice.ieeeAddr;
+        const device = new HomieDevice(this.homieHelper, device_id, device_id);
+
+        for (const expose of zDevice.exposes()) {
+            if (expose.type === "climate" || expose.type === "list") {
+                const featuresProperties = [];
+                for (const feature of expose.features || []) {
+                    logger.debug(`Homie: Feature label ${feature.label}`);
+                    // transpose type to mqtt datatype
+                    featuresProperties.push(new HomieProperty(this.homieHelper, feature.name, feature.label, feature.type, undefined, undefined, "", true, (feature.access & zhc.access.SET) !== 0));
+                }
+                const node = new HomieNode(this.homieHelper, expose.type, expose.type, featuresProperties);
+                await device.addNode(node);
+                continue;
+            }
+            logger.debug(`Homie: label ${expose.label}`);
+
+            // transpose type to mqtt datatype
+            properties.push(new HomieProperty(this.homieHelper, expose.name, expose.label, expose.type, undefined, undefined, "", true, (expose.access & zhc.access.SET) !== 0));
+        }
+        const node = new HomieNode(this.homieHelper, "main", "Main", properties);
+        device.addNode(node);
+        this.devices.set(device_id, device);
+
+        await device.expose();
+    };
 
     @bind async onEntityRemoved(data: eventdata.EntityRemoved): Promise<void> {
         logger.debug(`Homie: Clearing Home Assistant discovery for '${data.name}'`);
@@ -261,6 +301,7 @@ export class HomieNode {
         for (const property of this.properties.values()) {
             await property.expose(base_list);
         }
+        base_list.pop();
     };
 
     async trySet(deviceId: string, nodeId: string, propertyId: string, value: string): Promise<boolean> {
@@ -336,6 +377,8 @@ export class HomieProperty {
             base_list[base_list.length - 1] = "set";
             await this.homie.subscribe(base_list);
         }
+
+        base_list.pop();
     }
 
     async remove(): Promise<void> {
