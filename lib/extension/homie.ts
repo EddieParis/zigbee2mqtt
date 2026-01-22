@@ -126,21 +126,28 @@ export class Homie extends Extension{
         const device = new HomieDevice(this.homieHelper, device_id, device_id);
 
         for (const expose of zDevice.exposes()) {
-            if (expose.type === "climate" || expose.type === "list") {
-                const featuresProperties = [];
-                for (const feature of expose.features || []) {
-                    logger.debug(`Homie: Feature label ${feature.label}`);
-                    // transpose type to mqtt datatype
-                    featuresProperties.push(new HomieProperty(this.homieHelper, feature.name, feature.label, feature.type, undefined, undefined, "", true, (feature.access & zhc.access.SET) !== 0));
-                }
-                const node = new HomieNode(this.homieHelper, expose.type, expose.type, featuresProperties);
-                await device.addNode(node);
-                continue;
-            }
-            logger.debug(`Homie: label ${expose.label}`);
 
-            // transpose type to mqtt datatype
-            properties.push(new HomieProperty(this.homieHelper, expose.name, expose.label, expose.type, undefined, undefined, "", true, (expose.access & zhc.access.SET) !== 0));
+            var convertedType : string|undefined;
+
+            convertedType = converTypeZhc2Homie(expose, convertedType);
+
+            if (convertedType === undefined) {
+                if (expose.features) {
+                    const featuresProperties = [];
+                    for (const feature of expose.features || []) {
+                        logger.debug(`Homie: Feature label ${feature.label}`);
+                        // transpose type to mqtt datatype
+                        featuresProperties.push(new HomieProperty(this.homieHelper, feature.name, feature.label, feature.type, undefined, undefined, "", true, (feature.access & zhc.access.SET) !== 0));
+                    }
+                    const node = new HomieNode(this.homieHelper, expose.type, expose.type, featuresProperties);
+                    await device.addNode(node);
+                } else {
+                    logger.debug(`Homie: expose ${expose.name} has no mappable type and no features, skipping.`);
+                }
+            } else {
+                logger.debug(`Homie: label ${expose.label}`);
+                properties.push(new HomieProperty(this.homieHelper, expose.name, expose.label, convertedType, undefined, undefined, "", true, (expose.access & zhc.access.SET) !== 0));
+            }
         }
         const node = new HomieNode(this.homieHelper, "main", "Main", properties);
         device.addNode(node);
@@ -396,3 +403,23 @@ export class HomieProperty {
 };
 
 export default Homie;
+function converTypeZhc2Homie(expose: zhc.Expose, convertedType: string | undefined) {
+    switch (expose.type) {
+        case 'numeric':
+            convertedType = 'float';
+            break;
+        case 'binary':
+            convertedType = 'boolean';
+            break;
+        case 'enum':
+            convertedType = 'enum';
+            break;
+        case 'text':
+            convertedType = 'string';
+            break;
+        default:
+            convertedType = undefined;
+    };
+    return convertedType;
+}
+
