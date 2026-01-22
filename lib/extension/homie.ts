@@ -122,14 +122,12 @@ export class Homie extends Extension{
         
         const properties: HomieProperty[] = [];
 
-        const device_id = zDevice.ieeeAddr;
+        const device_id = zDevice.name;
         const device = new HomieDevice(this.homieHelper, device_id, device_id);
 
         for (const expose of zDevice.exposes()) {
 
-            var convertedType : string|undefined;
-
-            convertedType = converTypeZhc2Homie(expose, convertedType);
+            const convertedType = converTypeZhcExpose2Homie(expose);
 
             if (convertedType === undefined) {
                 if (expose.features) {
@@ -137,7 +135,7 @@ export class Homie extends Extension{
                     for (const feature of expose.features || []) {
                         logger.debug(`Homie: Feature label ${feature.label}`);
                         // transpose type to mqtt datatype
-                        featuresProperties.push(new HomieProperty(this.homieHelper, feature.name, feature.label, feature.type, undefined, undefined, "", true, (feature.access & zhc.access.SET) !== 0));
+                        featuresProperties.push(new HomieProperty(this.homieHelper, feature.name, feature.label, converTypeZhc2Homie(feature.type)||"", undefined, undefined, "", true, (feature.access & zhc.access.SET) !== 0));
                     }
                     const node = new HomieNode(this.homieHelper, expose.type, expose.type, featuresProperties);
                     await device.addNode(node);
@@ -198,21 +196,31 @@ class HomieHelper {
     public mqtt: Mqtt;
     private publishOptions: Partial<MqttPublishOptions> = {};
 
+    private zigbeePulishOptions : Partial<MqttPublishOptions> = {};
+
     constructor(mqtt: Mqtt, homieTopic: string | undefined) {
         this.mqtt = mqtt;
         if (homieTopic) {
             this.publishOptions.baseTopic = homieTopic;
         }
+        this.zigbeePulishOptions.skipReceive = false;
     }
 
     async publish(topic: string[], data: string): Promise<string> {
-        var assembled_topic = topic.join("/")
-        await this.mqtt.publish(assembled_topic, data, this.publishOptions);
+        var assembled_topic = topic.join("/");
+        const pub_options = {...this.publishOptions};
+        pub_options.clientOptions = {retain : true};
+
+        await this.mqtt.publish(assembled_topic, data, pub_options);
         return assembled_topic;
     }
 
     async publishFullTopic(topic: string, data: string): Promise<void> {
         await this.mqtt.publish(topic, data, this.publishOptions);
+    }
+
+    async publishToZigbee(topic: string, value: string) {
+        await this.mqtt.publish(topic, value, this.zigbeePulishOptions);
     }
 
     async remove_topic(topic: string): Promise<void> {
@@ -222,7 +230,8 @@ class HomieHelper {
     async subscribe(topic: string[]): Promise<string> {
         // no option at play here, we have to add base topic
         var assembled_topic = this.publishOptions.baseTopic + '/' + topic.join("/");
-        this.mqtt.subscribe(assembled_topic);
+        logger.info(`Subscribed to ${assembled_topic}`);
+        await this.mqtt.subscribe(assembled_topic);
         return assembled_topic;
     }
 
@@ -249,16 +258,19 @@ export class HomieDevice {
     }
 
     async expose(): Promise<void> {
-        const base_list: string[] = [this.id, "$state"]
+        const base_list: string[] = [this.id, "$state"];
 
-        base_list[base_list.length - 1] = "$homie"
-        await this.homie.publish(base_list, VERSION)
+        base_list[base_list.length - 1] = "$homie";
+        await this.homie.publish(base_list, VERSION);
 
-        // base_list[base_list.length - 1] = "$name"
-        // self.name_topic = self.publish(base_list, nice_device_name)
+        base_list[base_list.length - 1] = "$name";
+        await this.homie.publish(base_list, this.name);
 
-        base_list[base_list.length - 1] = "$state"
-        this.state_topic = await this.homie.publish(base_list, "init")
+        base_list[base_list.length - 1] = "$state";
+        this.state_topic = await this.homie.publish(base_list, "init");
+
+        base_list[base_list.length - 1] = "$nodes";
+        await this.homie.publish(base_list, [...this.nodes.keys()].join());
 
         for (const node of this.nodes.values()) {
             await node.expose(base_list);
@@ -398,13 +410,26 @@ export class HomieProperty {
 
     async setValue(deviceId: string, nodeId: string, propertyId: string, value: string): Promise<boolean> {
         logger.debug(`Homie: Value ${value} set for device node property (${deviceId}/${nodeId}/${propertyId}).`);
+
+        var converted:any = value;
+        if (this.format === "float") {
+            converted = Number(value);
+        }
+
+        await this.homie.publishToZigbee(`${deviceId}/set`, JSON.stringify({[propertyId]: converted}));
+
         return true;
     }
 };
 
 export default Homie;
-function converTypeZhc2Homie(expose: zhc.Expose, convertedType: string | undefined) {
-    switch (expose.type) {
+function converTypeZhcExpose2Homie(expose: zhc.Expose) : string|undefined{
+    return converTypeZhc2Homie(expose.type);
+}
+
+function converTypeZhc2Homie(type: string): string|undefined{
+    var convertedType: string|undefined;
+    switch (type) {
         case 'numeric':
             convertedType = 'float';
             break;
