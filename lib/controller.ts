@@ -454,7 +454,7 @@ export class Controller {
             }
 
             if (output === "attribute_and_json" || output === "attribute") {
-                await this.iteratePayloadAttributeOutput(`${entity.name}/`, message, options);
+                await this.iteratePayloadAttributeOutput(entity.name, message, options);
             }
         }
 
@@ -486,8 +486,10 @@ export class Controller {
             }
 
             if (message !== undefined) {
-                await this.mqtt.publish(`${topicRoot}${key}`, message, options);
+                await this.mqtt.publish(`${topicRoot}/${key}`, message, options);
             }
+
+            await this.getExtension("Homie")?.publishUpdate(topicRoot, key, message!, options);
         }
     }
 }

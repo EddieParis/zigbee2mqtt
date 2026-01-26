@@ -86,6 +86,10 @@ export class Homie extends Extension{
         }, utils.seconds(discoverWait));*/
     }
 
+    async publishUpdate(deviceName: string, key: string, message: string, options: Partial<MqttPublishOptions>): Promise<void> {
+        await this.devices.get(deviceName)?.publishUpdate(key, message, options);
+    }
+
     @bind
     async onZigbeeEvent(data: {device: Device}): Promise<void> {
         /*if (!this.getDiscovered(data.device).discovered) {
@@ -288,6 +292,14 @@ export class HomieDevice {
             return false;
         }
     }
+
+    async publishUpdate(key: string, message: string, options: Partial<MqttPublishOptions>): Promise<void> {
+        for (const node of this.nodes.values()) {
+            if (await node.publishUpdate(key, message, options)) {
+                break;
+            }
+        };
+    }
 };
 
 export class HomieNode {
@@ -329,6 +341,16 @@ export class HomieNode {
             return await property.setValue(deviceId, nodeId, propertyId, value);
         } else {
             logger.debug(`Homie: Got homie message for unregistered device node property (${deviceId}/${nodeId}/${propertyId}).`);
+            return false;
+        }
+    }
+
+    async publishUpdate(key: string, message: string, options: Partial<MqttPublishOptions>): Promise<boolean> {
+        const property = this.properties.get(key);
+        if (property) {
+            await property.publishUpdate(message, options);
+            return true;
+        } else {
             return false;
         }
     }
@@ -419,6 +441,10 @@ export class HomieProperty {
         }
 
         return true;
+    }
+
+    async publishUpdate(message: string, options: Partial<MqttPublishOptions>): Promise<void> {
+        await this.homie.publishFullTopic(this.value_topic, message);
     }
 };
 

@@ -1,3 +1,5 @@
+import { MqttPublishOptions } from "lib/mqtt";
+
 abstract class Extension {
     protected zigbee: Zigbee;
     protected mqtt: Mqtt;
@@ -55,6 +57,8 @@ abstract class Extension {
     }
 
     public adjustMessageBeforePublish(_entity: Group | Device, _message: KeyValue): void {}
+
+    public async publishUpdate(_topicRoot: string, _key: string, _message: string, _options: Partial<MqttPublishOptions>): Promise<void> {}
 }
 
 export default Extension;
