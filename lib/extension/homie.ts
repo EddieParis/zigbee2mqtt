@@ -411,12 +411,12 @@ export class HomieProperty {
     async setValue(deviceId: string, nodeId: string, propertyId: string, value: string): Promise<boolean> {
         logger.debug(`Homie: Value ${value} set for device node property (${deviceId}/${nodeId}/${propertyId}).`);
 
-        var converted:any = value;
-        if (this.format === "float") {
-            converted = Number(value);
+        if (this.type === "float") {
+            logger.debug(`Homie: ${propertyId} is a number`);
+            await this.homie.publishToZigbee(`${deviceId}/set`, JSON.stringify({[propertyId]: Number(value)}));
+        } else {
+            await this.homie.publishToZigbee(`${deviceId}/set`, JSON.stringify({[propertyId]: value}));
         }
-
-        await this.homie.publishToZigbee(`${deviceId}/set`, JSON.stringify({[propertyId]: converted}));
 
         return true;
     }
