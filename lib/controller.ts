@@ -449,19 +449,19 @@ export class Controller {
 
         if (!utils.objectIsEmpty(message)) {
             const output = settings.get().advanced.output;
-            if (output === "attribute_and_json" || output === "json") {
+            if (output.includes("json")) {
                 await this.mqtt.publish(entity.name, stringify(message), options);
             }
 
-            if (output === "attribute_and_json" || output === "attribute") {
-                await this.iteratePayloadAttributeOutput(entity.name, message, options);
+            if (output.includes("attribute") || output.includes("homie")) {
+                await this.iteratePayloadAttributeOutput(entity.name, message, options, output);
             }
         }
 
         this.eventBus.emitPublishEntityState({entity, message, stateChangeReason, payload});
     }
 
-    async iteratePayloadAttributeOutput(topicRoot: string, payload: KeyValue, options: Partial<MqttPublishOptions>): Promise<void> {
+    async iteratePayloadAttributeOutput(topicRoot: string, payload: KeyValue, options: Partial<MqttPublishOptions>, output: string): Promise<void> {
         for (const [key, value] of Object.entries(payload)) {
             let subPayload = value;
             let message: string | undefined;
@@ -480,16 +480,19 @@ export class Controller {
             } else if (Array.isArray(subPayload)) {
                 message = subPayload.map((x) => `${x}`).join(",");
             } else if (typeof subPayload === "object") {
-                await this.iteratePayloadAttributeOutput(`${topicRoot}${key}-`, subPayload, options);
+                await this.iteratePayloadAttributeOutput(`${topicRoot}${key}-`, subPayload, options, output);
             } else {
                 message = typeof subPayload === "string" ? subPayload : stringify(subPayload);
             }
 
             if (message !== undefined) {
+                if (output.includes("attribute")) {
                 await this.mqtt.publish(`${topicRoot}/${key}`, message, options);
+                }
+                if (output.includes("homie")) {
+                    await this.getExtension("Homie")?.publishUpdate(topicRoot, key, message!, options);
+                }
             }
-
-            await this.getExtension("Homie")?.publishUpdate(topicRoot, key, message!, options);
         }
     }
 }

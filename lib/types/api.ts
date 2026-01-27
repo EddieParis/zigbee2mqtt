@@ -214,7 +214,7 @@ export type Zigbee2MQTTSettings = {
         elapsed: boolean;
         network_key: number[] | "GENERATE";
         timestamp_format: string;
-        output: "json" | "attribute" | "attribute_and_json";
+        output: "json" | "attribute" | "homie" | "attribute_and_json" | "homie_and_json" | "homie_and_attribute" | "homie_and_attribute_and_json";
         transmit_power?: number;
         /** 3.0: default to false (JSON schema & settings `defaults`) */
         enable_external_js: boolean;
