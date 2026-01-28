@@ -153,7 +153,7 @@ export class Homie extends Extension{
         }
         const node = new HomieNode(this.homieHelper, "main", "Main", properties);
         device.addNode(node);
-        this.devices.set(device_id, device);
+        this.devices.set(zDevice.ieeeAddr, device);
 
         await device.expose();
     };
