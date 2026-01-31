@@ -87,6 +87,7 @@ export class Homie extends Extension{
     }
 
     async publishUpdate(deviceName: string, key: string, message: string, options: Partial<MqttPublishOptions>): Promise<void> {
+        logger.debug(`Send updates for homie device ${deviceName}`);
         await this.devices.get(deviceName)?.publishUpdate(key, message, options);
     }
 
@@ -118,7 +119,7 @@ export class Homie extends Extension{
 
     async discover(zDevice: Device): Promise<void> {
 
-        if (this.devices.has(zDevice.ieeeAddr)) {
+        if (this.devices.has(zDevice.name)) {
             logger.debug(`Homie: Device '${zDevice.name}' already exposed.`);
             return;
         }
@@ -153,7 +154,7 @@ export class Homie extends Extension{
         }
         const node = new HomieNode(this.homieHelper, "main", "Main", properties);
         device.addNode(node);
-        this.devices.set(zDevice.ieeeAddr, device);
+        this.devices.set(zDevice.name, device);
 
         await device.expose();
     };
