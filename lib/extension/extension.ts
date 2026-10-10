@@ -1,4 +1,4 @@
-import { MqttPublishOptions } from "lib/mqtt";
+import { MqttPublishOptions } from "../mqtt";
 
 abstract class Extension {
     protected zigbee: Zigbee;

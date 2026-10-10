@@ -1,10 +1,8 @@
 import Extension from "./extension";
 import * as settings from "../util/settings";
-import utils from "lib/util/utils";
 import logger from "../util/logger";
 import bind from "bind-decorator";
-import { MqttPublishOptions } from "lib/mqtt";
-import { forEach } from "jszip";
+import { MqttPublishOptions } from "../mqtt";
 import * as zhc from "zigbee-herdsman-converters";
 
 const VERSION = "3.0"
